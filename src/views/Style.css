@@ -1,0 +1,53 @@
+.card {
+    display: flex;
+    flex-direction: column;
+    border-radius: 30px;
+    box-shadow: 2px 1px 10px #00000091;
+    padding: 20px;
+    background-color: white;
+}
+
+.card-header {
+    background-color: #f5f9fd;
+    height: 50px;
+    text-align: center;
+}
+
+.card-row {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 15px;
+}
+
+.card-section {
+    padding: 5px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+}
+
+.card-stats {
+    padding: 10px;
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+}
+
+.stats-icon {
+    border-radius: 4px;
+    width: 18px;
+    height: 18px;
+    margin-right: 5px;
+}
+
+.stats-icon-success {
+    background-color: #00e28f;
+}
+
+.stats-icon-fail {
+    background-color: #fd6460;
+}
