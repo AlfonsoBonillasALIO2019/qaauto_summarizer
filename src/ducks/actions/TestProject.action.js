@@ -6,7 +6,7 @@ const projectID = "wS38bJoQpUeO5zFg_71UOw";
 const executionList = [];
 let jobList = [];
 
-const getJobs = async (project = projectID) => {
+export const getJobs = async (project = projectID) => {
   const { data } = await API.get(`/projects/${project}/jobs`);
 
   jobList = data;
@@ -14,27 +14,37 @@ const getJobs = async (project = projectID) => {
   return jobList;
 };
 
-const getExecutedJobs = async (job, project = projectID) => {
+export const getJob = async (job, project = projectID) => {
+  const { data } = await API.get(`/projects/${project}/jobs/${job}`);
+
+  return data;
+};
+
+export const getExecutedJobs = async (job, project = projectID) => {
   const { data } = await API.get(`/projects/${project}/jobs/${job}/reports`);
 
   return data;
 };
 
-const executeJob = async (job) => {
-  const { data } = await API.post(`/projects/${projectID}/jobs/${job}/run`, {
-    queue: true,
-  });
+export const executeJob = async (job, project = projectID) => {
+  try {
+    const { data } = await API.post(`/projects/${project}/jobs/${job}/run`, {
+      queue: true,
+    });
 
-  return data.id;
+    return data.id;
+  } catch (error) {
+    throw new Error(error.response.headers.message);
+  }
 };
 
-const addExecuteJob = (id) => {
+export const addExecuteJob = (id) => {
   executionList.push(id);
 };
 
-const getExecutionList = () => executionList;
+export const getExecutionList = () => executionList;
 
-const getExecutionReport = async (job, id, project = projectID) => {
+export const getExecutionReport = async (job, id, project = projectID) => {
   const { data } = await API.get(
     `/projects/${project}/jobs/${job}/reports/${id}`
   );
@@ -42,7 +52,7 @@ const getExecutionReport = async (job, id, project = projectID) => {
   return data;
 };
 
-const getSummarizeReport = async () => {
+export const getSummarizeReport = async () => {
   const clients = getClientData();
   let summarizeReport = {};
 
@@ -53,9 +63,20 @@ const getSummarizeReport = async () => {
 
     for (let index = 0; index < jobs.length; index++) {
       const job = jobs[index];
+      const jobInfo = await getJob(job, element.project);
+
+      if (!summarizeReport[element.client])
+        summarizeReport[element.client] = {
+          jobs: [{ ...jobInfo }],
+        };
+      else
+        summarizeReport[element.client].jobs = [
+          ...summarizeReport[element.client].jobs,
+          { ...jobInfo },
+        ];
 
       const reports = await getExecutedJobs(job, element.project);
-      console.log(reports);
+
       if (reports.length > 0) {
         const report = reports.sort(
           (a, b) => new Date(b.executionEnd) - new Date(a.executionEnd)
@@ -67,12 +88,10 @@ const getSummarizeReport = async () => {
           element.project
         );
 
-        console.log(execution);
-
         summarizeReport[element.client].jobs = summarizeReport[
           element.client
         ].jobs.map((elm) =>
-          elm === job ? { ...elm, report: execution } : elm
+          elm.id === job ? { ...jobInfo, report: execution } : elm
         );
       }
     }
@@ -81,24 +100,14 @@ const getSummarizeReport = async () => {
   return summarizeReport;
 };
 
-const sendSummaryReport = async (report) => {
-  console.log(report);
+export const sendSummaryReport = async (report) => {
   try {
-    const { data } = await APISES.post("mail/send", { message: report });
+    const { data } = await APISES.post("/default/PP-QA_Summarizer", {
+      message: report,
+    });
 
-    console.log(data);
+    return;
   } catch (error) {
-    console.log(error);
+    throw new Error();
   }
-};
-
-module.exports = {
-  getJobs,
-  executeJob,
-  addExecuteJob,
-  getExecutionList,
-  getExecutionReport,
-  getExecutedJobs,
-  getSummarizeReport,
-  sendSummaryReport,
 };

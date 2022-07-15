@@ -1,32 +1,71 @@
 import React from "react";
 import {
-  getJobs,
   getExecutionReport,
   getExecutedJobs,
   getSummarizeReport,
   sendSummaryReport,
+  getJob,
+  executeJob,
 } from "../ducks/actions/TestProject.action";
 import { Table } from "../components/table";
 import { CustomModal as Modal } from "../components/modal";
 import { generateChart } from "../ducks/actions/QuickChart.action";
-import { percentage } from "../util";
+import { percentage, getClientData } from "../util";
 import moment from "moment";
-import { AssessmentOutlined } from "@mui/icons-material";
-import { Parser } from "html-to-react";
+import { AssessmentOutlined, PlayArrowRounded } from "@mui/icons-material";
+import {
+  Snackbar,
+  Alert as MuiAlert,
+  Button,
+  CircularProgress,
+} from "@mui/material";
+// import { Parser } from "html-to-react";
 import "./Style.css";
+
+const Alert = React.forwardRef((props, ref) => {
+  return <MuiAlert elevation={6} ref={ref} variant="filled" {...props} />;
+});
+
+const SnackBarPosition = {
+  vertical: "top",
+  horizontal: "right",
+};
 
 export const ReportView = () => {
   const [jobs, setJobs] = React.useState([]);
   const [open, setOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
+  const [loadingRequest, setLoadingRequest] = React.useState(false);
   const [job, setJob] = React.useState({});
-  const [report, setReport] = React.useState("<h1>Hi there!</h1>");
   const [htmlReport, setHTMLReport] = React.useState("");
+  const [openSuccess, setOpenSuccess] = React.useState(false);
+  const [openFailed, setOpenFailed] = React.useState(false);
+  const [error, setError] = React.useState("");
+  const [successMessage, setSuccessMessage] = React.useState("");
+
+  const onHandleCloseSuccess = (event, reason) => {
+    if (reason === "clickaway") return;
+
+    setOpenSuccess(false);
+  };
+
+  const onHandleCloseFailed = (event, reason) => {
+    if (reason === "clickaway") return;
+
+    setOpenFailed(false);
+  };
 
   const COLUMNS = [
     {
+      filed: "client",
+      headerName: "Client",
+      width: 200,
+      align: "left",
+      renderCell: (params) => <b>{params.row.client}</b>,
+    },
+    {
       field: "name",
-      headerName: "Name",
+      headerName: "Job",
       width: 200,
       align: "left",
     },
@@ -35,6 +74,23 @@ export const ReportView = () => {
       headerName: "Description",
       width: 200,
       align: "left",
+    },
+    {
+      field: "",
+      headerName: "Execute",
+      width: 200,
+      align: "left",
+      renderCell: (params) => {
+        return (
+          <PlayArrowRounded
+            key={params.row.id}
+            style={{ cursor: "pointer" }}
+            onClick={() =>
+              onHandleExecuteJob(params.row.id, params.row.project)
+            }
+          />
+        );
+      },
     },
     {
       field: "report",
@@ -58,26 +114,54 @@ export const ReportView = () => {
     },
   ];
 
+  const onHandleExecuteJob = async (job, project) => {
+    try {
+      const result = await executeJob(job, project);
+
+      setJobs((prev) =>
+        prev.map((elm) =>
+          elm.id === job ? { ...elm, executeID: result } : elm
+        )
+      );
+
+      setSuccessMessage(
+        "The job has been executed, please wait to get the report!"
+      );
+      setOpenSuccess(true);
+    } catch (error) {
+      setError(error.message);
+      setOpenFailed(true);
+    }
+  };
+
   const onHandleGetJobs = React.useCallback(async () => {
     setLoading(true);
-    const result = await getJobs();
+    const result = getClientData();
     const auxArray = [];
+
     for (const key in result) {
       if (Object.hasOwnProperty.call(result, key)) {
-        const element = result[key];
-        const executions = await getExecutedJobs(element.id);
-        if (executions.length > 0) {
-          const lastExecuted = executions.sort(
-            (a, b) => new Date(b.executionEnd) - new Date(a.executionEnd)
-          )[0];
+        const { jobs, ...element } = result[key];
 
-          auxArray.push({
-            ...element,
-            executeID: lastExecuted.id,
-            report: "",
-          });
-        } else {
-          auxArray.push({ ...element, report: "" });
+        for (let index = 0; index < jobs.length; index++) {
+          const elm = jobs[index];
+          const job = await getJob(elm, element.project);
+          const executions = await getExecutedJobs(job.id, element.project);
+          if (executions.length > 0) {
+            const lastExecuted = executions.sort(
+              (a, b) => new Date(b.executionEnd) - new Date(a.executionEnd)
+            )[0];
+
+            auxArray.push({
+              ...element,
+              ...job,
+              executeID: lastExecuted.id,
+              report: "",
+              execute: "",
+            });
+          } else {
+            auxArray.push({ ...element, ...job, report: "", execute: "" });
+          }
         }
       }
     }
@@ -93,8 +177,6 @@ export const ReportView = () => {
   const onHandleGetSummarizeReport = async () => {
     const result = await getSummarizeReport();
 
-    console.log(result)
-
     let htmlString =
       '<table><thead style="background-color: lightblue;" ><tr><th>Client Name</th><th>Product</th><th><div>Test Cases</div><div style="display: flex; flex-direction: row; justify-content: space-around; align-items: center;"><div style="padding: 5px; background-color: #00e28f;" >Passed</div><div style="padding: 5px; background-color: #fd6460;" >Failed</div><div style="padding: 5px; background-color: darkgray;" >Status</div></div></th></tr></thead><tbody>';
 
@@ -102,13 +184,20 @@ export const ReportView = () => {
       if (Object.hasOwnProperty.call(result, key)) {
         const client = result[key];
         let auxString1 =
-          "<tr><td style=\"border: 1px solid;\" >" +
+          '<tr><td style="border: 1px solid;" >' +
           key +
-          "</td><td style=\"border: 1px solid;\" ><table style=\"width: 100%;\" ><tbody>";
+          '</td><td style="border: 1px solid;" ><table style="width: 100%;" ><tbody>';
         for (let index = 0; index < client.jobs.length; index++) {
           const elm = client.jobs[index];
 
-          auxString1 += "<tr><td>" + elm.name + "</td></tr>";
+          if (elm.report)
+            auxString1 +=
+              '<tr><td><a target="_blank" href=\'' +
+              elm.report.reportUrl +
+              "' >" +
+              elm.name +
+              "</a></td></tr>";
+          else auxString1 += "<tr><td>" + elm.name + "</td></tr>";
 
           if (index === client.jobs.length - 1) {
             auxString1 += "</tbody></table></td>";
@@ -116,19 +205,20 @@ export const ReportView = () => {
           }
         }
 
-        let auxString2 = "<td style=\"border: 1px solid;\" ><table style=\"width: 100%;\" ><tbody>";
+        let auxString2 =
+          '<td style="border: 1px solid;" ><table style="width: 100%;" ><tbody>';
         for (let index = 0; index < client.jobs.length; index++) {
           const elm = client.jobs[index];
 
           auxString2 += `<tr>
                           ${
                             !elm.report
-                              ? "<td style=\"width: 30%;\" >0</td><td style=\"width: 30%;\" >0</td><td style=\"width: 30%;\" >N/A</td>"
+                              ? '<td style="width: 30%;" >0</td><td style="width: 30%;" >0</td><td style="width: 30%;" >N/A</td>'
                               : `<td style=\"width: 30%; ${
-                            elm.report.passedTests > 0
-                              ? "background-color: #00e28f;"
-                              : ""
-                          }\" >${elm.report.passedTests}</td>
+                                  elm.report.passedTests > 0
+                                    ? "background-color: #00e28f;"
+                                    : ""
+                                }\" >${elm.report.passedTests}</td>
                           <td style=\"width: 30%; ${
                             elm.report.failedTests > 0
                               ? "background-color: #fd6460;"
@@ -139,7 +229,7 @@ export const ReportView = () => {
                               ? "background-color: #00e28f;"
                               : "background-color: #fd6460;"
                           }\" >${elm.report.resultType}</td>`
-                        }</tr>`;
+                          }</tr>`;
 
           if (index === client.jobs.length - 1) {
             auxString2 += "</tbody></table></td></tr>";
@@ -147,21 +237,29 @@ export const ReportView = () => {
           }
         }
 
-        console.log(Object.keys(result)[Object.keys(result).length - 1], key);
         if (Object.keys(result)[Object.keys(result).length - 1] === key)
           htmlString += "</tbody></table>";
       }
     }
-    setHTMLReport(htmlString.replace(/(?:\r\n|\r|\n)/g, ''));
-    setReport(Parser().parse(htmlString.trim()));
+    setHTMLReport(htmlString.replace(/(?:\r\n|\r|\n)/g, ""));
   };
 
   const onHandleSendReport = async () => {
-    try {
-      await sendSummaryReport(htmlReport);
-    } catch (error) {
-      console.log(error);
-    }
+    setLoadingRequest(true);
+    await onHandleGetSummarizeReport();
+    sendSummaryReport(htmlReport)
+    .then(() => {
+      setSuccessMessage(
+        "The summary report has been sent it, please check your inbox."
+      );
+      setOpenSuccess(true);
+      setLoadingRequest(false);
+    })
+    .catch(() => {
+      setError("The summary report could not be send it, try again later.");
+      setOpenFailed(true);
+      setLoadingRequest(false);
+    });
   };
 
   const onHandleGetReport = async (job, id) => {
@@ -273,24 +371,14 @@ export const ReportView = () => {
       </div>
       <div>
         <Table columns={COLUMNS} rows={jobs} loading={loading} />
-        <div>
-          <button onClick={onHandleGetSummarizeReport}>
-            Get Summarize Report
-          </button>
-        </div>
-        <div>
-          <button onClick={onHandleSendReport}>Send Summarize Report</button>
-        </div>
-        <div
-          style={{
-            padding: 10,
-            display: "flex",
-            flexDirection: "row",
-            justifyContent: "center",
-            alignContent: "center",
-          }}
-        >
-          {report}
+        <div style={{ display: "flex", padding: 30 }}>
+          <Button variant="outlined" onClick={onHandleSendReport}>
+            {loadingRequest ? (
+              <CircularProgress size={14} />
+            ) : (
+              "Send Summarize Report"
+            )}
+          </Button>
         </div>
       </div>
       <Modal isOpen={open} handleCancel={() => setOpen(false)}>
@@ -305,6 +393,26 @@ export const ReportView = () => {
           {job.report}
         </div>
       </Modal>
+      <Snackbar
+        anchorOrigin={SnackBarPosition}
+        open={openSuccess}
+        autoHideDuration={4000}
+        onClose={onHandleCloseSuccess}
+      >
+        <Alert severity="success" sx={{ width: "100%" }}>
+          {successMessage}
+        </Alert>
+      </Snackbar>
+      <Snackbar
+        anchorOrigin={SnackBarPosition}
+        open={openFailed}
+        autoHideDuration={4000}
+        onClose={onHandleCloseFailed}
+      >
+        <Alert severity="error" sx={{ width: "100%" }}>
+          {error}
+        </Alert>
+      </Snackbar>
     </div>
   );
 };
