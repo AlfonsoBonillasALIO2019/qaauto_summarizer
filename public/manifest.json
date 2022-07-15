@@ -1,6 +1,6 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "Summarizer",
+  "name": "Policy Port Test Summarizer",
   "icons": [
     {
       "src": "favicon.ico",
